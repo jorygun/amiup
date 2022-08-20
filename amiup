@@ -1,0 +1,316 @@
+#!/bin/bash
+
+#Explain: tests availability of internet until it is up.  Call with ip address or defaults to set of listed sites in test_sites
+
+##### INSTALL INSTRUCTIONS ##########
+#(Note: ignore the # at the beginning of each line below.
+#  It makes the line a comment)
+
+#  You will create a directory in your home directory, move this file into it,
+#  and add the new directory to the "path" the system uses
+#  to search for commands.
+
+
+#  1.  Check or create directory for this script
+# open terminal and type
+#	ls bin
+#  If it says "No such file ...", then type this:
+# 	mkdir bin
+#  Otherwise, you already have a bin directory so go to next step.
+
+# 2.  Copy this file into your bin directory
+# If this file is in your "downloads" directory, then type this in terminal:
+#		cp Downloads/amiup bin/
+
+# Now type this to designate the file as an executable command:
+# 		chmod +x bin/amiup
+
+# 3. Set your PATH variable.  In terminal type:
+#   echo $PATH
+# if the result contains "$HOME/bin" or "~/bin" or "/Users/yourname/bin"
+#  you are done installing.
+# Otherwise you will need to edit your .bash_profile file.
+# (This is the file that runs every time you start a terminal session
+#   to set the parameters for the session.)
+#  It is in your home directory, but invisible because of leading . on name.
+
+# In terminal, type:
+# 	echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile
+
+# Now close the terminal window.  When you open a new one, the new
+# .bash_profile will run.
+
+# SETTING DEFAULT SITES
+# You can use the script to test any site any time you run it,
+# but you can set some default sites that it runs if you don't
+# specify anything.  To do this, edit this file using any text
+# editor, and find the line starting "test_sites" (a few lines
+# down from here.)
+
+# Change the sites between the parentheses to whatever you want,
+# surrounding each site with quote mark and separating with
+# spaces (NOT COMMAS).  Save the file.
+
+##################################################################
+#TO RUN THIS SCRIPT
+# just open terminal and type "amiup"
+# to test a specific site, type "amiup sitename"
+
+##### USER SETTINGS ####
+#Set default sites to test here, surround with single quotes, separate with space
+
+test_sites=('4.2.2.1' 'digitalm.mail.pairserver.com' 'secure.emailsrvr.com' 'reddit.com' )
+
+
+#test_sites=('4.2.2.1' 'digitalm.mail.pairserver.com' 'or.metrc.com' 'fake.xyz')
+
+
+#OTHER USER SETTINGS (usually not changed)
+# constants (all integers) #
+rate=4 #tests per minute (approximate)
+announce=5 #report actual minutes every this many minutes
+maxtime=120 #minutes - will time out then
+maxloops=1000 #give up after this many pings if all else fails
+failping="$HOME/.failping" #for forcing failure for testing
+
+
+### PROGRAM STARTS HERE ###
+### DON'T CHAGNE BELOW ###
+
+# if there was a site requested, set test sites to it.
+# [[ -n "$1" ]] && test_sites=( "$1" );
+if [ "$#" -ne 0 ] ; then
+	test_sites=( "$@" );
+fi
+
+
+#### Calculated Settings #####
+
+last_announce=0;
+maxtics=$(($maxtime*60)) #seconds
+
+start_date=$(date )
+first_pass='1'; #seconds allowance for each ping.  If blank, will be first pass time
+loop_count=0
+announce_count=0;
+minutes=0
+downers=""
+test_site_count=${#test_sites[@]}
+me=$(basename $0)
+triptimer=0
+	fail=''
+export TERM_CYAN="\033[0;36m"
+export TERM_RESET="\033[0m";
+
+#check for gtimeout
+if type "gtimeout" > /dev/null; then
+ pcommand="gtimeout --preserve-status 5 /sbin/ping -c 2 -q -o"
+else
+ pcommand="/sbin/ping -t 5 -c 2 -q -o"
+fi
+
+if [ -e "$failping" ]; then
+	echo "$failping is present. Will force failure. Type 'failping' to remove. "
+fi
+# set  time for a ping (subtract from rate to get sleep time for each loop)
+first_pass=1
+
+# 		first_pass=$tickelapsed #time for first ping.  Probably about 1 sec
+# 		first_pass=1 #assumption
+  		sleeptime=$((60/$rate - $first_pass)) #subtract actual time for first test
+  		[[ $sleeptime -lt 0 ]] && sleeptime=0
+
+# 		#echo "tick $tick; stawrt: $start_tics"
+#
+
+
+########## CHECK PING #########
+checkping () {
+
+	# check_ping ip
+	#  returns $? = 0 if up; 1 if down
+	#echo "running checkping on $1";
+
+	#fails if file named "failping" exists in $HOME
+
+
+	thisip=$1;
+	#echo "testing $thisip"
+	if (  [ -e "$failping" ]  || (! ping_result=$($pcommand $thisip 2>/dev/null) ) ) ; then #
+			return 1
+	else
+			return 0
+	fi
+}
+
+######## FINISH ###########
+finish (){
+#sub runs after end.  call with result code
+#result codes
+# 0 ok
+# -n up but -n sites down
+# 1-999 timed out after n tests
+# -1010 max loops exceed
+# -1001 terminated by user
+#
+
+	end_tics=$(date +%s);
+	rcode=$1
+
+	downsec=$(( $end_tics - $start_tics ))
+	local _spec_site=$3
+	elapsed=$(elapsed_time $start_tics $end_tics)
+	e=0; #exit status
+
+	echo -e "\n Ending ($rcode)"
+	if [[ "$rcode" -eq "-1010" ]] ; then
+		echo "Max loops $maxloops exceeded: elapsed h:m:s $elapsed "
+		e=1
+
+	elif [[ "$rcode" -eq "-1001" ]] ; then
+		echo "Terminated by user after $elapsed h:m:s"
+		e=1
+
+
+	elif [[ "$rcode" -le 0 ]] ; then
+		afplay /System/Library/Sounds/Submarine.aiff
+
+		if [[ $downsec -gt 15 ]] ; then
+			echo -e "\n\033[32m   ***  Now up. $TERM_RESET
+          Was down for $elapsed h:m:s" ;
+		else
+			echo -e "\033[32m   *** Internet's up! $TERM_RESET"
+		fi
+		if [[ $rcode -lt 0 ]] ; then
+				down=$(( - $rcode ))
+				echo  -e  "        $down of $test_site_count sites down:\n\t\t $downers"
+
+		fi
+
+	else
+		echo "Timed out after $rcode tests. $elapsed.";
+
+
+	fi
+# 	echo "
+# ***********************************************************"
+	echo ""
+	exit $e
+}
+
+
+trap "finish -1001 $start_tics" INT
+trap "finish -1001 $start_tics" TERM
+
+
+##### MAIN  #################
+sitelist=$(printf "  %s" "${test_sites[@]}")
+#echo "***********************************************************"
+echo "amiup starting at $start_date. "
+echo "Testing access to:"
+echo -e "${sitelist:1} \n"
+
+echo -e "\033[90m To test specific sites, type 'amiup site1 [site2] [site3] ... ', e.g.
+    amiup 8.8.4.4 google.com
+
+End codes:
+    0: ok; -n n sites down; +n timed out or stopped after n tests
+
+";
+echo -e "\033[0;30m"
+start_tics=$(date '+%s');
+
+##LOOP ###
+passcount=0
+loop_reported=0;
+while [[ $loop_count -lt $maxloops ]] ; do
+	sites_down=0; sites_tested=0; spec_stat='not tested'; downers='';
+	for site in "${test_sites[@]}"; do
+		if ! checkping "$site" ; then
+			(( sites_down++ ));
+			downers="$downers $site,"
+		fi
+		(( sites_tested++ ))
+		 if [[ $loop_reported -eq  0 ]]
+		 then
+		 	loop_reported=1;
+		 	loopsum=$(( $looptime + $sleeptime ))
+   		# echo "Setting loop time to $loopsum secs. ";
+   	fi
+#	printf "%-50s %3d tested; %3d down\n"  $site  $sites_tested $sites_down;
+	done
+	#echo "tested $sites_tested; down $sites_down; spec $spec_stat"
+
+
+	#am i up?
+	if [[ $sites_down -lt $sites_tested ]] ; then
+		#partial pass
+		symbol="+"
+		(( passcount++ ))
+		#echo "passcount $passcount"
+		# pass count requires 3 consecutive passes before the pass is accepted
+		if  [ $loop_count -eq 0 ] || [ $passcount -ge 3 ] ; then
+			finish $(( - $sites_down ))
+			exit
+		fi
+
+	#else, all sites down
+	else
+		passcount=0
+		symbol='.'
+	fi
+
+
+
+
+	if [[ $loop_count -eq 0 ]] ; then
+		echo -e "\033[31m" '   ***   Unable to reach primary hosts   ***' $TERM_RESET
+		echo "Will test at $rate tests/minute up to $maxtime minutes or net is up. "
+		echo "('Up' is at least one site accessible in 3 consecutive tests.)"
+		echo "Each character is one test. dot is no sites up.  + is at least one site up."
+		echo "Type Cntrl-C to manually end testing."
+
+		echo ""
+	fi
+
+	(( loop_count++ ))
+	tick=$(date +%s);
+	tickelapsed=$(( $tick - $start_tics ))
+
+
+	#print dots and report progress
+	echo -n "$symbol"
+	afplay /System/Library/Sounds/Pop.aiff
+
+	(( announce_count++ ))
+	elapsed_minutes=$(( tickelapsed/60 ));
+	if [[ $(( $announce_count % 5 )) -eq 0 ]] ; then
+		echo -n ' '
+	fi
+	if [[ $(( $elapsed_minutes % $announce )) -eq 0  && ($elapsed_minutes -ne $last_announce ) ]] ; then
+			spaces=$(( 5 - $(( $announce_count %5 )) )) #dots in last segment
+			while [[ $spaces -gt 0 ]] ; do
+				echo -n ' '
+				(( spaces-- ))
+			done
+			#echo " $elapsed_minutes mins"
+			printf "%3d mins\n" $elapsed_minutes
+			last_announce=$elapsed_minutes
+			announce_count=0;
+	fi
+
+
+
+	sleep $sleeptime
+	#echo "loop $loop_count, minutes $minutes"
+
+	if [[ $tickelapsed -ge $maxtics ]] ; then
+		finish "$loop_count"
+		exit 0
+	fi
+
+done
+#maxed out loops
+finish "-1010"
+exit 0
+#end
