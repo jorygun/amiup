@@ -16,6 +16,16 @@ you have access, and rings a bell to let you know.
 Otherwise it keeps testing until it times out (2 hours I think)
 or you type ctrl-C to halt the script.
 
+The audio is designed for a mac using afplay command.  
+Don't know how yto make sounds on other systems.  Crl-G I guess?
+
+Also, there is a second script called elapsed_time.  This just
+converts tics to a human-readable days, hours, minutes.  There's
+probably a better way to do thisk but this was my way.
+
+Just needs to be you path somewhere so the first script can use it.
+
+
 I'm not very good at this stuff so no guarantees, but I've used it
 for a long time when I'm in doubt.
 
